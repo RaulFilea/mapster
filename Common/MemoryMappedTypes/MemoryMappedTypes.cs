@@ -106,6 +106,78 @@ public enum GeometryType : byte
     Point
 }
 
+public enum PropEnum : ushort
+{
+    HMOTORWAY = 100,
+    HTRUNK,
+    HPRIMARY,
+    HSECONDARY,
+    HTERTIARY,
+    HUNCLASSIFIED,
+    HRESIDENTIAL,
+    HROAD,
+
+    WATER = 200,
+
+    BADMINISTRATIVE = 300,
+    BFOREST = 310,
+
+    A2 = 400, // admin level 2
+
+    PCITY = 500,
+    PTOWN,
+    PLOCALITY,
+    PHAMLET,
+
+    RAILWAY = 600,
+
+    NFELL = 700,
+    NGRASSLAND,
+    NHEATH,
+    NMOOR,
+    NSCRUB,
+    NWETLAND,
+    NWOOD = 710,
+    NTREE_ROW,
+    NBARE_ROCK = 720,
+    NROCK,
+    NSCREE,
+    NBEACH = 730,
+    NSAND,
+    NWATER = 740,
+
+    LFOREST = 800,
+    LORCHARD,
+    LRESIDENTIAL = 810,
+    LCEMETERY,
+    LINDUSTRIAL,
+    LCOMMERCIAL,
+    LSQUARE,
+    LCONSTRUCTION,
+    LMILITARY,
+    LQUARRY,
+    LBROWNFIELD,
+
+    LFARM = 820,
+    LMEADOW,
+    LGRASS,
+    LGREENFIELD,
+    LRECREATION_GROUND,
+    LWINTER_SPORTS,
+    LALOTTMENTS,
+
+    LRESERVOIR = 830,
+    LBASIN,
+
+    BUILDING = 900,
+
+    LEISURE = 1000,
+
+    AMENITY = 1100,
+    
+    NAME = 1200
+}
+
 [StructLayout(LayoutKind.Explicit, Pack = 1)]
 public struct PropertyEntryList
 {
@@ -116,12 +188,6 @@ public struct PropertyEntryList
 [StructLayout(LayoutKind.Explicit, Pack = 1)]
 public struct MapFeature
 {
-    // https://wiki.openstreetmap.org/wiki/Key:highway
-    public static string[] HighwayTypes =
-    {
-        "motorway", "trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "road"
-    };
-
     [FieldOffset(0)] public long Id;
     [FieldOffset(8)] public int LabelOffset;
     [FieldOffset(12)] public GeometryType GeometryType;

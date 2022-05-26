@@ -2,12 +2,12 @@
   "profiles": {
     "Service": {
       "commandName": "Project",
-      "commandLineArgs": "--input \"../../Tests/TestTileRenderer/MapData/andorra-10032022.bin\"",
+      "commandLineArgs": "--input \"../../DataPipeline/MapFeatureGenerator/MapData/andorra.bin\"",
       "launchBrowser": true,
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       },
-      "applicationUrl": "http://localhost:50541"
+      "applicationUrl": "http://localhost:8080/render?minLat=42.39202286040&minLon=1.33003234863281&maxLat=42.709686919756&maxLon=1.85600280761718&size=2000"
     }
   }
 }

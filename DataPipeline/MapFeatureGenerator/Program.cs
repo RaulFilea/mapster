@@ -1,12 +1,12 @@
 ﻿using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Runtime.InteropServices;
-using System.Runtime.Serialization;
 using CommandLine;
 using Mapster.Common;
 using Mapster.Common.MemoryMappedTypes;
 using OSMDataParser;
 using OSMDataParser.Elements;
+using static System.String;
 
 namespace MapFeatureGenerator;
 
@@ -22,22 +22,22 @@ public static class Program
             switch (blob.Type)
             {
                 case BlobType.Primitive:
-                    {
-                        var primitiveBlock = blob.ToPrimitiveBlock();
-                        foreach (var primitiveGroup in primitiveBlock)
-                            switch (primitiveGroup.ContainedType)
-                            {
-                                case PrimitiveGroup.ElementType.Node:
-                                    foreach (var node in primitiveGroup) nodes[node.Id] = (AbstractNode)node;
-                                    break;
+                {
+                    var primitiveBlock = blob.ToPrimitiveBlock();
+                    foreach (var primitiveGroup in primitiveBlock)
+                        switch (primitiveGroup.ContainedType)
+                        {
+                            case PrimitiveGroup.ElementType.Node:
+                                foreach (var node in primitiveGroup) nodes[node.Id] = (AbstractNode) node;
+                                break;
 
-                                case PrimitiveGroup.ElementType.Way:
-                                    foreach (var way in primitiveGroup) ways.Add((Way)way);
-                                    break;
-                            }
+                            case PrimitiveGroup.ElementType.Way:
+                                foreach (var way in primitiveGroup) ways.Add((Way) way);
+                                break;
+                        }
 
-                        break;
-                    }
+                    break;
+                }
             }
         });
 
@@ -65,6 +65,25 @@ public static class Program
             Ways = ways.ToImmutableArray()
         };
     }
+    
+    private static void UpdateKeysValues(ICollection<ushort> values, string key, string value)
+    {
+        PropEnum propEnum;
+        var s = Join(Empty, new string[] {key.Substring(0, 1), value});
+
+        var ok = Enum.TryParse(s, true, out propEnum);
+        if (!ok)
+        {
+            ok = Enum.TryParse(key, true, out propEnum);
+        }
+        
+        if (!ok)
+        {
+            return;
+        }
+        
+        values.Add((ushort) propEnum);
+    }
 
     private static void CreateMapDataFile(ref MapData mapData, string filePath)
     {
@@ -72,25 +91,20 @@ public static class Program
 
         long featureIdCounter = -1;
         var featureIds = new List<long>();
-        // var geometryTypes = new List<GeometryType>();
-        // var coordinates = new List<(long id, (int offset, List<Coordinate> coordinates) values)>();
-
         var labels = new List<int>();
-        // var propKeys = new List<(long id, (int offset, IEnumerable<string> keys) values)>();
-        // var propValues = new List<(long id, (int offset, IEnumerable<string> values) values)>();
 
         using var fileWriter = new BinaryWriter(File.OpenWrite(filePath));
         var offsets = new Dictionary<int, long>(mapData.Tiles.Count);
 
         // Write FileHeader
-        fileWriter.Write((long)1); // FileHeader: Version
+        fileWriter.Write((long) 1); // FileHeader: Version
         fileWriter.Write(mapData.Tiles.Count); // FileHeader: TileCount
 
         // Write TileHeaderEntry
         foreach (var tile in mapData.Tiles)
         {
             fileWriter.Write(tile.Key); // TileHeaderEntry: ID
-            fileWriter.Write((long)0); // TileHeaderEntry: OffsetInBytes
+            fileWriter.Write((long) 0); // TileHeaderEntry: OffsetInBytes
         }
 
         foreach (var (tileId, _) in mapData.Tiles)
@@ -115,8 +129,7 @@ public static class Program
                 {
                     Id = featureId,
                     Coordinates = (totalCoordinateCount, new List<Coordinate>()),
-                    PropertyKeys = (totalPropertyCount, new List<string>(way.Tags.Count)),
-                    PropertyValues = (totalPropertyCount, new List<string>(way.Tags.Count))
+                    PropertyValues = (totalPropertyCount, new List<ushort>(way.Tags.Count))
                 };
 
                 var geometryType = GeometryType.Polyline;
@@ -126,10 +139,10 @@ public static class Program
                 {
                     if (tag.Key == "name")
                     {
-                        labels[^1] = totalPropertyCount * 2 + featureData.PropertyKeys.keys.Count * 2 + 1;
+                        labels[^1] = totalPropertyCount + featureData.PropertyValues.values.Count + 1;
                     }
-                    featureData.PropertyKeys.keys.Add(tag.Key);
-                    featureData.PropertyValues.values.Add(tag.Value);
+
+                    UpdateKeysValues(featureData.PropertyValues.values, tag.Key, tag.Value);
                 }
 
                 foreach (var nodeId in way.NodeIds)
@@ -144,10 +157,12 @@ public static class Program
 
                     foreach (var (key, value) in node.Tags)
                     {
-                        if (!featureData.PropertyKeys.keys.Contains(key))
+                        var s = Join(Empty, new string[] {key, value});
+                        Enum.TryParse(s, out PropEnum propEnum);
+
+                        if (!featureData.PropertyValues.values.Contains((ushort) propEnum))
                         {
-                            featureData.PropertyKeys.keys.Add(key);
-                            featureData.PropertyValues.values.Add(value);
+                            UpdateKeysValues(featureData.PropertyValues.values, key, value);
                         }
                     }
 
@@ -166,15 +181,12 @@ public static class Program
                 {
                     geometryType = GeometryType.Polygon;
                 }
-                featureData.GeometryType = (byte)geometryType;
 
-                totalPropertyCount += featureData.PropertyKeys.keys.Count;
+                featureData.GeometryType = (byte) geometryType;
+
+                // totalPropertyCount += featureData.PropertyKeys.keys.Count;
+                totalPropertyCount += featureData.PropertyValues.values.Count;
                 totalCoordinateCount += featureData.Coordinates.coordinates.Count;
-
-                if (featureData.PropertyKeys.keys.Count != featureData.PropertyValues.values.Count)
-                {
-                    throw new InvalidDataContractException("Property keys and values should have the same count");
-                }
 
                 featureIds.Add(featureId);
                 featuresData.Add(featureId, featureData);
@@ -188,9 +200,7 @@ public static class Program
                 }
 
                 var featureId = Interlocked.Increment(ref featureIdCounter);
-
-                var featurePropKeys = new List<string>();
-                var featurePropValues = new List<string>();
+                var featurePropValues = new List<ushort>();
 
                 labels.Add(-1);
                 for (var i = 0; i < node.Tags.Count; ++i)
@@ -198,33 +208,26 @@ public static class Program
                     var tag = node.Tags[i];
                     if (tag.Key == "name")
                     {
-                        labels[^1] = totalPropertyCount * 2 + featurePropKeys.Count * 2 + 1;
+                        labels[^1] = totalPropertyCount + featurePropValues.Count + 1;
                     }
 
-                    featurePropKeys.Add(tag.Key);
-                    featurePropValues.Add(tag.Value);
-                }
-
-                if (featurePropKeys.Count != featurePropValues.Count)
-                {
-                    throw new InvalidDataContractException("Property keys and values should have the same count");
+                    UpdateKeysValues(featurePropValues, tag.Key, tag.Value);
                 }
 
                 var fData = new FeatureData
                 {
                     Id = featureId,
-                    GeometryType = (byte)GeometryType.Point,
+                    GeometryType = (byte) GeometryType.Point,
                     Coordinates = (totalCoordinateCount, new List<Coordinate>
                     {
                         new Coordinate(node.Latitude, node.Longitude)
                     }),
-                    PropertyKeys = (totalPropertyCount, featurePropKeys),
                     PropertyValues = (totalPropertyCount, featurePropValues)
                 };
                 featuresData.Add(featureId, fData);
                 featureIds.Add(featureId);
 
-                totalPropertyCount += featurePropKeys.Count;
+                totalPropertyCount += featurePropValues.Count;
                 ++totalCoordinateCount;
             }
 
@@ -233,23 +236,23 @@ public static class Program
             // Write TileBlockHeader
             fileWriter.Write(featureIds.Count); // TileBlockHeader: FeatureCount
             fileWriter.Write(totalCoordinateCount); // TileBlockHeader: CoordinateCount
-            fileWriter.Write(totalPropertyCount * 2); // TileBlockHeader: StringCount
+            fileWriter.Write(totalPropertyCount); // TileBlockHeader: StringCount
             fileWriter.Write(0); //TileBlockHeader: CharactersCount
 
             // Take note of the offset within the file for this field
             var coPosition = fileWriter.BaseStream.Position;
             // Write a placeholder value to reserve space in the file
-            fileWriter.Write((long)0); // TileBlockHeader: CoordinatesOffsetInBytes (placeholder)
+            fileWriter.Write((long) 0); // TileBlockHeader: CoordinatesOffsetInBytes (placeholder)
 
             // Take note of the offset within the file for this field
             var soPosition = fileWriter.BaseStream.Position;
             // Write a placeholder value to reserve space in the file
-            fileWriter.Write((long)0); // TileBlockHeader: StringsOffsetInBytes (placeholder)
+            fileWriter.Write((long) 0); // TileBlockHeader: StringsOffsetInBytes (placeholder)
 
             // Take note of the offset within the file for this field
             var choPosition = fileWriter.BaseStream.Position;
             // Write a placeholder value to reserve space in the file
-            fileWriter.Write((long)0); // TileBlockHeader: CharactersOffsetInBytes (placeholder)
+            fileWriter.Write((long) 0); // TileBlockHeader: CharactersOffsetInBytes (placeholder)
 
             // Write MapFeatures
             for (var i = 0; i < featureIds.Count; ++i)
@@ -261,8 +264,9 @@ public static class Program
                 fileWriter.Write(featureData.GeometryType); // MapFeature: GeometryType
                 fileWriter.Write(featureData.Coordinates.offset); // MapFeature: CoordinateOffset
                 fileWriter.Write(featureData.Coordinates.coordinates.Count); // MapFeature: CoordinateCount
-                fileWriter.Write(featureData.PropertyKeys.offset * 2); // MapFeature: PropertiesOffset 
-                fileWriter.Write(featureData.PropertyKeys.keys.Count); // MapFeature: PropertyCount
+
+                fileWriter.Write(featureData.PropertyValues.offset); // MapFeature: PropertiesOffset 
+                fileWriter.Write(featureData.PropertyValues.values.Count); // MapFeature: PropertyCount
             }
 
             // Record the current position in the stream
@@ -297,18 +301,14 @@ public static class Program
             foreach (var t in featureIds)
             {
                 var featureData = featuresData[t];
-                for (var i = 0; i < featureData.PropertyKeys.keys.Count; ++i)
+                for (var i = 0; i < featureData.PropertyValues.values.Count; ++i)
                 {
-                    ReadOnlySpan<char> k = featureData.PropertyKeys.keys[i];
-                    ReadOnlySpan<char> v = featureData.PropertyValues.values[i];
+                    var v = featureData.PropertyValues.values[i];
+                    var span = v.ToString().AsSpan();
 
                     fileWriter.Write(stringOffset); // StringEntry: Offset
-                    fileWriter.Write(k.Length); // StringEntry: Length
-                    stringOffset += k.Length;
-
-                    fileWriter.Write(stringOffset); // StringEntry: Offset
-                    fileWriter.Write(v.Length); // StringEntry: Length
-                    stringOffset += v.Length;
+                    fileWriter.Write(span.Length); // StringEntry: Length
+                    stringOffset += span.Length;
                 }
             }
 
@@ -323,18 +323,13 @@ public static class Program
             foreach (var t in featureIds)
             {
                 var featureData = featuresData[t];
-                for (var i = 0; i < featureData.PropertyKeys.keys.Count; ++i)
+                for (var i = 0; i < featureData.PropertyValues.values.Count; ++i)
                 {
-                    ReadOnlySpan<char> k = featureData.PropertyKeys.keys[i];
-                    foreach (var c in k)
+                    var v = featureData.PropertyValues.values[i];
+                    var span = v.ToString().AsSpan();
+                    foreach (var c in span)
                     {
-                        fileWriter.Write((short)c);
-                    }
-
-                    ReadOnlySpan<char> v = featureData.PropertyValues.values[i];
-                    foreach (var c in v)
-                    {
-                        fileWriter.Write((short)c);
+                        fileWriter.Write((short) c);
                     }
                 }
             }
@@ -388,7 +383,6 @@ public static class Program
 
         public byte GeometryType { get; set; }
         public (int offset, List<Coordinate> coordinates) Coordinates { get; init; }
-        public (int offset, List<string> keys) PropertyKeys { get; init; }
-        public (int offset, List<string> values) PropertyValues { get; init; }
+        public (int offset, List<ushort> values) PropertyValues { get; init; }
     }
 }

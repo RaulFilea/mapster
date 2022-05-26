@@ -24,7 +24,7 @@ public readonly ref struct MapFeatureData
     public GeometryType Type { get; init; }
     public ReadOnlySpan<char> Label { get; init; }
     public ReadOnlySpan<Coordinate> Coordinates { get; init; }
-    public Dictionary<string, string> Properties { get; init; }
+    public HashSet<ushort> Properties { get; init; }
 }
 
 /// <summary>
@@ -63,7 +63,7 @@ public unsafe class DataFile : IDisposable
         _mmf = MemoryMappedFile.CreateFromFile(path);
         _mma = _mmf.CreateViewAccessor();
         _mma.SafeMemoryMappedViewHandle.AcquirePointer(ref _ptr);
-        _fileHeader = (FileHeader*)_ptr;
+        _fileHeader = (FileHeader*) _ptr;
     }
 
     public void Dispose()
@@ -91,7 +91,7 @@ public unsafe class DataFile : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     private TileHeaderEntry* GetNthTileHeader(int i)
     {
-        return (TileHeaderEntry*)(_ptr + i * TileHeaderEntrySizeInBytes + FileHeaderSizeInBytes);
+        return (TileHeaderEntry*) (_ptr + i * TileHeaderEntrySizeInBytes + FileHeaderSizeInBytes);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
@@ -104,7 +104,7 @@ public unsafe class DataFile : IDisposable
             if (tileHeaderEntry->ID == tileId)
             {
                 tileOffset = tileHeaderEntry->OffsetInBytes;
-                return (*(TileBlockHeader*)(_ptr + tileOffset), tileOffset);
+                return (*(TileBlockHeader*) (_ptr + tileOffset), tileOffset);
             }
         }
 
@@ -114,32 +114,27 @@ public unsafe class DataFile : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     private MapFeature* GetFeature(int i, ulong offset)
     {
-        return (MapFeature*)(_ptr + offset + TileBlockHeaderSizeInBytes + i * MapFeatureSizeInBytes);
+        return (MapFeature*) (_ptr + offset + TileBlockHeaderSizeInBytes + i * MapFeatureSizeInBytes);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     private ReadOnlySpan<Coordinate> GetCoordinates(ulong coordinateOffset, int ithCoordinate, int coordinateCount)
     {
-        return new ReadOnlySpan<Coordinate>(_ptr + coordinateOffset + ithCoordinate * CoordinateSizeInBytes, coordinateCount);
+        return new ReadOnlySpan<Coordinate>(_ptr + coordinateOffset + ithCoordinate * CoordinateSizeInBytes,
+            coordinateCount);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     private void GetString(ulong stringsOffset, ulong charsOffset, int i, out ReadOnlySpan<char> value)
     {
-        var stringEntry = (StringEntry*)(_ptr + stringsOffset + i * StringEntrySizeInBytes);
+        var stringEntry = (StringEntry*) (_ptr + stringsOffset + i * StringEntrySizeInBytes);
         value = new ReadOnlySpan<char>(_ptr + charsOffset + stringEntry->Offset * 2, stringEntry->Length);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
-    private void GetProperty(ulong stringsOffset, ulong charsOffset, int i, out ReadOnlySpan<char> key, out ReadOnlySpan<char> value)
+    private void GetProperty(ulong stringsOffset, ulong charsOffset, int i, out ReadOnlySpan<char> value)
     {
-        if (i % 2 != 0)
-        {
-            throw new ArgumentException("Properties are key-value pairs and start at even indices in the string list (i.e. i % 2 == 0)");
-        }
-
-        GetString(stringsOffset, charsOffset, i, out key);
-        GetString(stringsOffset, charsOffset, i + 1, out value);
+        GetString(stringsOffset, charsOffset, i, out value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
@@ -158,10 +153,12 @@ public unsafe class DataFile : IDisposable
             {
                 continue;
             }
+
             for (var j = 0; j < header.Tile.Value.FeaturesCount; ++j)
             {
                 var feature = GetFeature(j, header.TileOffset);
-                var coordinates = GetCoordinates(header.Tile.Value.CoordinatesOffsetInBytes, feature->CoordinateOffset, feature->CoordinateCount);
+                var coordinates = GetCoordinates(header.Tile.Value.CoordinatesOffsetInBytes, feature->CoordinateOffset,
+                    feature->CoordinateCount);
                 var isFeatureInBBox = false;
 
                 for (var k = 0; k < coordinates.Length; ++k)
@@ -176,16 +173,20 @@ public unsafe class DataFile : IDisposable
                 var label = ReadOnlySpan<char>.Empty;
                 if (feature->LabelOffset >= 0)
                 {
-                    GetString(header.Tile.Value.StringsOffsetInBytes, header.Tile.Value.CharactersOffsetInBytes, feature->LabelOffset, out label);
+                    GetString(header.Tile.Value.StringsOffsetInBytes, header.Tile.Value.CharactersOffsetInBytes,
+                        feature->LabelOffset, out label);
                 }
 
                 if (isFeatureInBBox)
                 {
-                    var properties = new Dictionary<string, string>(feature->PropertyCount);
+                    var properties = new HashSet<ushort>();
                     for (var p = 0; p < feature->PropertyCount; ++p)
                     {
-                        GetProperty(header.Tile.Value.StringsOffsetInBytes, header.Tile.Value.CharactersOffsetInBytes, p * 2 + feature->PropertiesOffset, out var key, out var value);
-                        properties.Add(key.ToString(), value.ToString());
+                        GetProperty(header.Tile.Value.StringsOffsetInBytes, header.Tile.Value.CharactersOffsetInBytes,
+                            p + feature->PropertiesOffset, out var value);
+
+                        ushort.TryParse(value, out var v);
+                        properties.Add(v);
                     }
 
                     if (!action(new MapFeatureData

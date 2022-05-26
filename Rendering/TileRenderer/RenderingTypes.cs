@@ -101,52 +101,40 @@ public struct GeoFeature : BaseShape
         Type = type;
         ScreenCoordinates = new PointF[c.Length];
         for (var i = 0; i < c.Length; i++)
-            ScreenCoordinates[i] = new PointF((float)MercatorProjection.lonToX(c[i].Longitude),
-                (float)MercatorProjection.latToY(c[i].Latitude));
+            ScreenCoordinates[i] = new PointF((float) MercatorProjection.lonToX(c[i].Longitude),
+                (float) MercatorProjection.latToY(c[i].Latitude));
     }
 
-    public GeoFeature(ReadOnlySpan<Coordinate> c, MapFeatureData feature)
+    public GeoFeature(ReadOnlySpan<Coordinate> c, MapFeatureData feature, ushort property)
     {
         IsPolygon = feature.Type == GeometryType.Polygon;
-        var naturalKey = feature.Properties.FirstOrDefault(x => x.Key == "natural").Value;
         Type = GeoFeatureType.Unknown;
-        if (naturalKey != null)
+
+        if (property is >= (ushort) PropEnum.NFELL and <= (ushort) PropEnum.NWETLAND)
         {
-            if (naturalKey == "fell" ||
-                naturalKey == "grassland" ||
-                naturalKey == "heath" ||
-                naturalKey == "moor" ||
-                naturalKey == "scrub" ||
-                naturalKey == "wetland")
-            {
-                Type = GeoFeatureType.Plain;
-            }
-            else if (naturalKey == "wood" ||
-                     naturalKey == "tree_row")
-            {
-                Type = GeoFeatureType.Forest;
-            }
-            else if (naturalKey == "bare_rock" ||
-                     naturalKey == "rock" ||
-                     naturalKey == "scree")
-            {
-                Type = GeoFeatureType.Mountains;
-            }
-            else if (naturalKey == "beach" ||
-                     naturalKey == "sand")
-            {
-                Type = GeoFeatureType.Desert;
-            }
-            else if (naturalKey == "water")
-            {
-                Type = GeoFeatureType.Water;
-            }
+            Type = GeoFeatureType.Plain;
+        }
+        else if (property.Equals((ushort) PropEnum.NWOOD) || property.Equals((ushort) PropEnum.NTREE_ROW))
+        {
+            Type = GeoFeatureType.Forest;
+        }
+        else if (property is >= (ushort) PropEnum.NBARE_ROCK and <= (ushort) PropEnum.NSCREE)
+        {
+            Type = GeoFeatureType.Mountains;
+        }
+        else if (property.Equals((ushort) PropEnum.NBEACH) || property.Equals((ushort) PropEnum.NSAND))
+        {
+            Type = GeoFeatureType.Desert;
+        }
+        else if (property.Equals((ushort) PropEnum.NWATER))
+        {
+            Type = GeoFeatureType.Water;
         }
 
         ScreenCoordinates = new PointF[c.Length];
         for (var i = 0; i < c.Length; i++)
-            ScreenCoordinates[i] = new PointF((float)MercatorProjection.lonToX(c[i].Longitude),
-                (float)MercatorProjection.latToY(c[i].Latitude));
+            ScreenCoordinates[i] = new PointF((float) MercatorProjection.lonToX(c[i].Longitude),
+                (float) MercatorProjection.latToY(c[i].Latitude));
     }
 }
 
@@ -172,8 +160,8 @@ public struct Railway : BaseShape
         IsPolygon = false;
         ScreenCoordinates = new PointF[c.Length];
         for (var i = 0; i < c.Length; i++)
-            ScreenCoordinates[i] = new PointF((float)MercatorProjection.lonToX(c[i].Longitude),
-                (float)MercatorProjection.latToY(c[i].Latitude));
+            ScreenCoordinates[i] = new PointF((float) MercatorProjection.lonToX(c[i].Longitude),
+                (float) MercatorProjection.latToY(c[i].Latitude));
     }
 }
 
@@ -191,6 +179,7 @@ public struct PopulatedPlace : BaseShape
         {
             return;
         }
+
         var font = SystemFonts.Families.First().CreateFont(12, FontStyle.Bold);
         context.DrawText(Name, font, Color.Black, ScreenCoordinates[0]);
     }
@@ -200,9 +189,9 @@ public struct PopulatedPlace : BaseShape
         IsPolygon = false;
         ScreenCoordinates = new PointF[c.Length];
         for (var i = 0; i < c.Length; i++)
-            ScreenCoordinates[i] = new PointF((float)MercatorProjection.lonToX(c[i].Longitude),
-                (float)MercatorProjection.latToY(c[i].Latitude));
-        var name = feature.Properties.FirstOrDefault(x => x.Key == "name").Value;
+            ScreenCoordinates[i] = new PointF((float) MercatorProjection.lonToX(c[i].Longitude),
+                (float) MercatorProjection.latToY(c[i].Latitude));
+        var name = feature.Properties.FirstOrDefault(x => x.Equals((ushort) PropEnum.NAME));
 
         if (feature.Label.IsEmpty)
         {
@@ -211,28 +200,20 @@ public struct PopulatedPlace : BaseShape
         }
         else
         {
-            Name = string.IsNullOrWhiteSpace(name) ? feature.Label.ToString() : name;
+            Name = feature.Label.ToString();
             ShouldRender = true;
         }
     }
 
-    public static bool ShouldBePopulatedPlace(MapFeatureData feature)
+    public static bool ShouldBePopulatedPlace(MapFeatureData feature, ushort p)
     {
         // https://wiki.openstreetmap.org/wiki/Key:place
         if (feature.Type != GeometryType.Point)
         {
             return false;
         }
-        foreach (var entry in feature.Properties)
-            if (entry.Key.StartsWith("place"))
-            {
-                if (entry.Value.StartsWith("city") || entry.Value.StartsWith("town") ||
-                    entry.Value.StartsWith("locality") || entry.Value.StartsWith("hamlet"))
-                {
-                    return true;
-                }
-            }
-        return false;
+
+        return p is >= (ushort) PropEnum.PCITY and <= (ushort) PropEnum.PHAMLET;
     }
 }
 
@@ -253,8 +234,8 @@ public struct Border : BaseShape
         IsPolygon = false;
         ScreenCoordinates = new PointF[c.Length];
         for (var i = 0; i < c.Length; i++)
-            ScreenCoordinates[i] = new PointF((float)MercatorProjection.lonToX(c[i].Longitude),
-                (float)MercatorProjection.latToY(c[i].Latitude));
+            ScreenCoordinates[i] = new PointF((float) MercatorProjection.lonToX(c[i].Longitude),
+                (float) MercatorProjection.latToY(c[i].Latitude));
     }
 
     public static bool ShouldBeBorder(MapFeatureData feature)
@@ -262,16 +243,19 @@ public struct Border : BaseShape
         // https://wiki.openstreetmap.org/wiki/Key:admin_level
         var foundBoundary = false;
         var foundLevel = false;
-        foreach (var entry in feature.Properties)
+
+        foreach (var p in feature.Properties)
         {
-            if (entry.Key.StartsWith("boundary") && entry.Value.StartsWith("administrative"))
+            if (p.Equals((ushort) PropEnum.BADMINISTRATIVE))
             {
                 foundBoundary = true;
             }
-            if (entry.Key.StartsWith("admin_level") && entry.Value == "2")
+
+            if (p.Equals((ushort) PropEnum.A2))
             {
                 foundLevel = true;
             }
+
             if (foundBoundary && foundLevel)
             {
                 break;
@@ -306,8 +290,8 @@ public struct Waterway : BaseShape
         IsPolygon = isPolygon;
         ScreenCoordinates = new PointF[c.Length];
         for (var i = 0; i < c.Length; i++)
-            ScreenCoordinates[i] = new PointF((float)MercatorProjection.lonToX(c[i].Longitude),
-                (float)MercatorProjection.latToY(c[i].Latitude));
+            ScreenCoordinates[i] = new PointF((float) MercatorProjection.lonToX(c[i].Longitude),
+                (float) MercatorProjection.latToY(c[i].Latitude));
     }
 }
 
@@ -333,8 +317,8 @@ public struct Road : BaseShape
         IsPolygon = isPolygon;
         ScreenCoordinates = new PointF[c.Length];
         for (var i = 0; i < c.Length; i++)
-            ScreenCoordinates[i] = new PointF((float)MercatorProjection.lonToX(c[i].Longitude),
-                (float)MercatorProjection.latToY(c[i].Latitude));
+            ScreenCoordinates[i] = new PointF((float) MercatorProjection.lonToX(c[i].Longitude),
+                (float) MercatorProjection.latToY(c[i].Latitude));
     }
 }
 

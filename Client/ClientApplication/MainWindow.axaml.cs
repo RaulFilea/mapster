@@ -30,10 +30,10 @@ public partial class MainWindow : Window
 
         try
         {
-            var response = _httpClient.GetAsync("http://localhost:8080/render?minLon=1.388397216796875&minLat=42.402164470921285&maxLon=1.8024444580078125&maxLat=42.67688269641377&size=2000").Result;
+            var response = _httpClient.GetAsync("http://localhost:8080/render?minLon=1.388397216796875&minLat=42.402164470921285&maxLon=1.8024444580078125&maxLat=42.67688269641377&size=9000").Result;
             if (response.IsSuccessStatusCode)
             {
-                Items.Add(new MapTile(response.Content.ReadAsByteArrayAsync().Result, 2000));
+                Items.Add(new MapTile(response.Content.ReadAsByteArrayAsync().Result, 9000));
             }
 
         }
